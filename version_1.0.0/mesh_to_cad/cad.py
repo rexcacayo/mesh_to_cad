@@ -61,10 +61,13 @@ def guess_preset(V, F):
 
 def _material(key):
     name, rgba = COLORS[key]
-    mat = bpy.data.materials.get(name)
-    if mat is None:
-        mat = bpy.data.materials.new(name)
-        mat.diffuse_color = rgba
+    mat = bpy.data.materials.get(name) or bpy.data.materials.new(name)
+    mat.diffuse_color = rgba
+    nt = getattr(mat, 'node_tree', None)
+    if nt is not None:                       # en Blender 5 el color de la vista sale del nodo
+        for node in nt.nodes:
+            if node.type == 'BSDF_PRINCIPLED':
+                node.inputs['Base Color'].default_value = rgba
     return mat
 
 
@@ -107,12 +110,15 @@ def convert(context, obj, preset='AUTO', straighten=True, round_dims=True, color
     fn1, _fa1, _c = fit.face_data(P, F)
     flipped = int(((fn0 * fn1).sum(1) < 0).sum())
     if straighten:
+        lo0, hi0 = V.min(0), V.max(0)
         R = np.stack([B[2], B[1], -B[0]])          # la cara plana más grande, apoyada abajo
         if np.linalg.det(R) < 0:
             R[0] = -R[0]
         P = P @ R.T
         lo, hi = P.min(0), P.max(0)
-        P = P - np.array([(lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2, lo[2]])
+        # se queda donde estaba (no se amontona con otras piezas en el centro)
+        P = P - np.array([(lo[0] + hi[0]) / 2 - (lo0[0] + hi0[0]) / 2, (lo[1] + hi[1]) / 2 - (lo0[1] + hi0[1]) / 2,
+                          lo[2] - lo0[2]])
 
     # malla nueva: una cara de polígono por cada plano (se disuelven los triángulos del mismo plano)
     kind = np.array([feats[l]['type'] if l >= 0 else 'free' for l in label])
